@@ -22,21 +22,22 @@
 
 <pre>
   <kbd>c</kbd>: commit changes
+  <kbd>w</kbd>: commit changes without pre-commit hook
   <kbd>A</kbd>: amend last commit
   <kbd>C</kbd>: commit changes using git editor
   <kbd>space</kbd>: toggle staged
-  <kbd>d</kbd>: delete if untracked / checkout if tracked
+  <kbd>d</kbd>: view 'discard changes' options
   <kbd>e</kbd>: edit file
   <kbd>o</kbd>: open file
   <kbd>i</kbd>: add to .gitignore
   <kbd>r</kbd>: refresh files
   <kbd>S</kbd>: stash files
-  <kbd>s</kbd>: soft reset to last commit
   <kbd>a</kbd>: stage/unstage all
   <kbd>t</kbd>: add patch
-  <kbd>D</kbd>: reset hard and remove untracked files
+  <kbd>D</kbd>: view reset options
   <kbd>enter</kbd>: stage individual hunks/lines
   <kbd>f</kbd>: fetch
+  <kbd>X</kbd>: execute custom command
 </pre>
 
 ## Branches
@@ -61,9 +62,11 @@
   <kbd>R</kbd>: rename commit with editor
   <kbd>g</kbd>: reset to this commit
   <kbd>f</kbd>: fixup commit
+  <kbd>F</kbd>: create fixup commit for this commit
+  <kbd>S</kbd>: squash above commits
   <kbd>d</kbd>: delete commit
-  <kbd>J</kbd>: move commit down one
-  <kbd>K</kbd>: move commit up one
+  <kbd>ctrl+j</kbd>: move commit down one
+  <kbd>ctrl+k</kbd>: move commit up one
   <kbd>e</kbd>: edit commit
   <kbd>A</kbd>: amend commit with staged changes
   <kbd>p</kbd>: pick commit (when mid-rebase)
@@ -72,6 +75,7 @@
   <kbd>C</kbd>: copy commit range (cherry-pick)
   <kbd>v</kbd>: paste commits (cherry-pick)
   <kbd>enter</kbd>: view commit's files
+  <kbd>space</kbd>: select commit to diff with another commit
 </pre>
 
 ## Stash
@@ -91,24 +95,11 @@
   <kbd>o</kbd>: open file
 </pre>
 
-## Main (Merging)
-
-<pre>
-  <kbd>esc</kbd>: return to files panel
-  <kbd>space</kbd>: pick hunk
-  <kbd>b</kbd>: pick both hunks
-  <kbd>◄</kbd>: select previous conflict
-  <kbd>►</kbd>: select next conflict
-  <kbd>▲</kbd>: select top hunk
-  <kbd>▼</kbd>: select bottom hunk
-  <kbd>z</kbd>: undo
-</pre>
-
 ## Main (Normal)
 
 <pre>
-  <kbd>PgDn</kbd>: scroll down
-  <kbd>PgUp</kbd>: scroll up
+  <kbd>PgDn</kbd>: scroll down (fn+up)
+  <kbd>PgUp</kbd>: scroll up (fn+down)
 </pre>
 
 ## Main (Staging)
@@ -121,4 +112,17 @@
   <kbd>►</kbd>: select next hunk
   <kbd>space</kbd>: stage line
   <kbd>a</kbd>: stage hunk
+</pre>
+
+## Main (Merging)
+
+<pre>
+  <kbd>esc</kbd>: return to files panel
+  <kbd>space</kbd>: pick hunk
+  <kbd>b</kbd>: pick both hunks
+  <kbd>◄</kbd>: select previous conflict
+  <kbd>►</kbd>: select next conflict
+  <kbd>▲</kbd>: select top hunk
+  <kbd>▼</kbd>: select bottom hunk
+  <kbd>z</kbd>: undo
 </pre>

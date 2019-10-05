@@ -1,14 +1,15 @@
 package gui
 
 import (
+	"fmt"
+	"io/ioutil"
 	"math"
+	"os"
 	"sync"
 
 	// "io"
 	// "io/ioutil"
 
-	"io/ioutil"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -103,7 +104,8 @@ type branchPanelState struct {
 }
 
 type commitPanelState struct {
-	SelectedLine int
+	SelectedLine     int
+	SpecificDiffMode bool
 }
 
 type stashPanelState struct {
@@ -135,6 +137,7 @@ type guiState struct {
 	Commits             []*commands.Commit
 	StashEntries        []*commands.StashEntry
 	CommitFiles         []*commands.CommitFile
+	DiffEntries         []*commands.Commit
 	MenuItemCount       int // can't store the actual list because it's of interface{} type
 	PreviousView        string
 	Platform            commands.Platform
@@ -154,6 +157,7 @@ func NewGui(log *logrus.Entry, gitCommand *commands.GitCommand, oSCommand *comma
 		Commits:             make([]*commands.Commit, 0),
 		CherryPickedCommits: make([]*commands.Commit, 0),
 		StashEntries:        make([]*commands.StashEntry, 0),
+		DiffEntries:         make([]*commands.Commit, 0),
 		Platform:            *oSCommand.Platform,
 		Panels: &panelStates{
 			Files:       &filePanelState{SelectedLine: -1},
@@ -286,20 +290,75 @@ func (gui *Gui) onFocus(v *gocui.View) error {
 func (gui *Gui) layout(g *gocui.Gui) error {
 	g.Highlight = true
 	width, height := g.Size()
+
 	information := gui.Config.GetVersion()
 	if gui.g.Mouse {
 		donate := color.New(color.FgMagenta, color.Underline).Sprint(gui.Tr.SLocalize("Donate"))
 		information = donate + " " + information
 	}
-	leftSideWidth := width / 3
-	statusFilesBoundary := 2
-	filesBranchesBoundary := 2 * height / 5
-	commitsBranchesBoundary := 3 * height / 5
-	optionsTop := height - 2
-	commitsStashBoundary := optionsTop - 3
-	optionsVersionBoundary := width - max(len(utils.Decolorise(information)), 1)
-	minimumHeight := 18
+
+	minimumHeight := 9
 	minimumWidth := 10
+	if height < minimumHeight || width < minimumWidth {
+		v, err := g.SetView("limit", 0, 0, width-1, height-1, 0)
+		if err != nil {
+			if err.Error() != "unknown view" {
+				return err
+			}
+			v.Title = gui.Tr.SLocalize("NotEnoughSpace")
+			v.Wrap = true
+			_, _ = g.SetViewOnTop("limit")
+		}
+		return nil
+	}
+
+	currView := gui.g.CurrentView()
+	currentCyclebleView := gui.State.PreviousView
+	if currView != nil {
+		viewName := currView.Name()
+		usePreviouseView := true
+		for _, view := range cyclableViews {
+			if view == viewName {
+				currentCyclebleView = viewName
+				usePreviouseView = false
+				break
+			}
+		}
+		if usePreviouseView {
+			currentCyclebleView = gui.State.PreviousView
+		}
+	}
+
+	usableSpace := height - 7
+	extraSpace := usableSpace - (usableSpace/3)*3
+
+	vHeights := map[string]int{
+		"status":   3,
+		"files":    (usableSpace / 3) + extraSpace,
+		"branches": usableSpace / 3,
+		"commits":  usableSpace / 3,
+		"stash":    3,
+		"options":  1,
+	}
+
+	if height < 28 {
+		defaultHeight := 3
+		if height < 21 {
+			defaultHeight = 1
+		}
+		vHeights = map[string]int{
+			"status":   defaultHeight,
+			"files":    defaultHeight,
+			"branches": defaultHeight,
+			"commits":  defaultHeight,
+			"stash":    defaultHeight,
+			"options":  defaultHeight,
+		}
+		vHeights[currentCyclebleView] = height - defaultHeight*4 - 1
+	}
+
+	optionsVersionBoundary := width - max(len(utils.Decolorise(information)), 1)
+	leftSideWidth := width / 3
 
 	appStatus := gui.statusManager.getStatusString()
 	appStatusOptionsBoundary := 0
@@ -312,22 +371,10 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 		panelSpacing = 0
 	}
 
-	if height < minimumHeight || width < minimumWidth {
-		v, err := g.SetView("limit", 0, 0, max(width-1, 2), max(height-1, 2), 0)
-		if err != nil {
-			if err.Error() != "unknown view" {
-				return err
-			}
-			v.Title = gui.Tr.SLocalize("NotEnoughSpace")
-			v.Wrap = true
-			g.SetViewOnTop("limit")
-		}
-		return nil
-	}
 	_, _ = g.SetViewOnBottom("limit")
 	g.DeleteView("limit")
 
-	v, err := g.SetView("main", leftSideWidth+panelSpacing, 0, width-1, optionsTop, gocui.LEFT)
+	v, err := g.SetView("main", leftSideWidth+panelSpacing, 0, width-1, height-2, gocui.LEFT)
 	if err != nil {
 		if err.Error() != "unknown view" {
 			return err
@@ -337,7 +384,7 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 		v.FgColor = gocui.ColorWhite
 	}
 
-	if v, err := g.SetView("status", 0, 0, leftSideWidth, statusFilesBoundary, gocui.BOTTOM|gocui.RIGHT); err != nil {
+	if v, err := g.SetView("status", 0, 0, leftSideWidth, vHeights["status"]-1, gocui.BOTTOM|gocui.RIGHT); err != nil {
 		if err.Error() != "unknown view" {
 			return err
 		}
@@ -345,7 +392,7 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 		v.FgColor = gocui.ColorWhite
 	}
 
-	filesView, err := g.SetView("files", 0, statusFilesBoundary+panelSpacing, leftSideWidth, filesBranchesBoundary, gocui.TOP|gocui.BOTTOM)
+	filesView, err := g.SetViewBeneath("files", "status", vHeights["files"])
 	if err != nil {
 		if err.Error() != "unknown view" {
 			return err
@@ -355,7 +402,7 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 		v.FgColor = gocui.ColorWhite
 	}
 
-	branchesView, err := g.SetView("branches", 0, filesBranchesBoundary+panelSpacing, leftSideWidth, commitsBranchesBoundary, gocui.TOP|gocui.BOTTOM)
+	branchesView, err := g.SetViewBeneath("branches", "files", vHeights["branches"])
 	if err != nil {
 		if err.Error() != "unknown view" {
 			return err
@@ -364,7 +411,7 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 		branchesView.FgColor = gocui.ColorWhite
 	}
 
-	if v, err := g.SetView("commitFiles", 0, commitsBranchesBoundary+panelSpacing, leftSideWidth, commitsStashBoundary, gocui.TOP|gocui.BOTTOM); err != nil {
+	if v, err := g.SetViewBeneath("commitFiles", "branches", vHeights["commits"]); err != nil {
 		if err.Error() != "unknown view" {
 			return err
 		}
@@ -372,7 +419,7 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 		v.FgColor = gocui.ColorWhite
 	}
 
-	commitsView, err := g.SetView("commits", 0, commitsBranchesBoundary+panelSpacing, leftSideWidth, commitsStashBoundary, gocui.TOP|gocui.BOTTOM)
+	commitsView, err := g.SetViewBeneath("commits", "branches", vHeights["commits"])
 	if err != nil {
 		if err.Error() != "unknown view" {
 			return err
@@ -381,7 +428,7 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 		commitsView.FgColor = gocui.ColorWhite
 	}
 
-	stashView, err := g.SetView("stash", 0, commitsStashBoundary+panelSpacing, leftSideWidth, optionsTop, gocui.TOP|gocui.RIGHT)
+	stashView, err := g.SetViewBeneath("stash", "commits", vHeights["stash"])
 	if err != nil {
 		if err.Error() != "unknown view" {
 			return err
@@ -390,7 +437,7 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 		stashView.FgColor = gocui.ColorWhite
 	}
 
-	if v, err := g.SetView("options", appStatusOptionsBoundary-1, optionsTop, optionsVersionBoundary-1, optionsTop+2, 0); err != nil {
+	if v, err := g.SetView("options", appStatusOptionsBoundary-1, height-2, optionsVersionBoundary-1, height, 0); err != nil {
 		if err.Error() != "unknown view" {
 			return err
 		}
@@ -402,7 +449,7 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 
 	if gui.getCommitMessageView() == nil {
 		// doesn't matter where this view starts because it will be hidden
-		if commitMessageView, err := g.SetView("commitMessage", 0, 0, width/2, height/2, 0); err != nil {
+		if commitMessageView, err := g.SetView("commitMessage", width, height, width*2, height*2, 0); err != nil {
 			if err.Error() != "unknown view" {
 				return err
 			}
@@ -410,13 +457,12 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 			commitMessageView.Title = gui.Tr.SLocalize("CommitMessage")
 			commitMessageView.FgColor = gocui.ColorWhite
 			commitMessageView.Editable = true
-			commitMessageView.Editor = gocui.EditorFunc(gui.simpleEditor)
 		}
 	}
 
 	if check, _ := g.View("credentials"); check == nil {
 		// doesn't matter where this view starts because it will be hidden
-		if credentialsView, err := g.SetView("credentials", 0, 0, width/2, height/2, 0); err != nil {
+		if credentialsView, err := g.SetView("credentials", width, height, width*2, height*2, 0); err != nil {
 			if err.Error() != "unknown view" {
 				return err
 			}
@@ -427,11 +473,10 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 			credentialsView.Title = gui.Tr.SLocalize("CredentialsUsername")
 			credentialsView.FgColor = gocui.ColorWhite
 			credentialsView.Editable = true
-			credentialsView.Editor = gocui.EditorFunc(gui.simpleEditor)
 		}
 	}
 
-	if appStatusView, err := g.SetView("appStatus", -1, optionsTop, width, optionsTop+2, 0); err != nil {
+	if appStatusView, err := g.SetView("appStatus", -1, height-2, width, height, 0); err != nil {
 		if err.Error() != "unknown view" {
 			return err
 		}
@@ -443,7 +488,7 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 		}
 	}
 
-	if v, err := g.SetView("information", optionsVersionBoundary-1, optionsTop, width, optionsTop+2, 0); err != nil {
+	if v, err := g.SetView("information", optionsVersionBoundary-1, height-2, width, height, 0); err != nil {
 		if err.Error() != "unknown view" {
 			return err
 		}
@@ -454,30 +499,19 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 			return err
 		}
 
-		// these are only called once (it's a place to put all the things you want
-		// to happen on startup after the screen is first rendered)
-		gui.Updater.CheckForNewUpdate(gui.onBackgroundUpdateCheckFinish, false)
-		if err := gui.updateRecentRepoList(); err != nil {
+		// doing this here because it'll only happen once
+		if err := gui.loadNewRepo(); err != nil {
 			return err
 		}
-		gui.waitForIntro.Done()
+	}
 
-		if _, err := gui.g.SetCurrentView(filesView.Name()); err != nil {
-			return err
-		}
-
-		if err := gui.refreshSidePanels(gui.g); err != nil {
+	if gui.g.CurrentView() == nil {
+		if _, err := gui.g.SetCurrentView(gui.getFilesView().Name()); err != nil {
 			return err
 		}
 
-		if err := gui.switchFocus(g, nil, filesView); err != nil {
+		if err := gui.switchFocus(gui.g, nil, gui.getFilesView()); err != nil {
 			return err
-		}
-
-		if gui.Config.GetUserConfig().GetString("reporting") == "undetermined" {
-			if err := gui.promptAnonymousReporting(); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -509,6 +543,25 @@ func (gui *Gui) layout(g *gocui.Gui) error {
 	// this will let you see these branches as prettified json
 	// gui.Log.Info(utils.AsJson(gui.State.Branches[0:4]))
 	return gui.resizeCurrentPopupPanel(g)
+}
+
+func (gui *Gui) loadNewRepo() error {
+	gui.Updater.CheckForNewUpdate(gui.onBackgroundUpdateCheckFinish, false)
+	if err := gui.updateRecentRepoList(); err != nil {
+		return err
+	}
+	gui.waitForIntro.Done()
+
+	if err := gui.refreshSidePanels(gui.g); err != nil {
+		return err
+	}
+
+	if gui.Config.GetUserConfig().GetString("reporting") == "undetermined" {
+		if err := gui.promptAnonymousReporting(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (gui *Gui) promptAnonymousReporting() error {
@@ -566,6 +619,23 @@ func (gui *Gui) goEvery(interval time.Duration, function func() error) {
 	}()
 }
 
+func (gui *Gui) startBackgroundFetch() {
+	gui.waitForIntro.Wait()
+	isNew := gui.Config.GetIsNewRepo()
+	if !isNew {
+		time.After(60 * time.Second)
+	}
+	_, err := gui.fetch(gui.g, gui.g.CurrentView(), false)
+	if err != nil && strings.Contains(err.Error(), "exit status 128") && isNew {
+		_ = gui.createConfirmationPanel(gui.g, gui.g.CurrentView(), gui.Tr.SLocalize("NoAutomaticGitFetchTitle"), gui.Tr.SLocalize("NoAutomaticGitFetchBody"), nil, nil)
+	} else {
+		gui.goEvery(time.Second*60, func() error {
+			_, err := gui.fetch(gui.g, gui.g.CurrentView(), false)
+			return err
+		})
+	}
+}
+
 // Run setup the gui with keybindings and start the mainloop
 func (gui *Gui) Run() error {
 	g, err := gocui.NewGui(gocui.OutputNormal, OverlappingEdges)
@@ -590,22 +660,9 @@ func (gui *Gui) Run() error {
 		gui.waitForIntro.Add(1)
 	}
 
-	go func() {
-		gui.waitForIntro.Wait()
-		isNew := gui.Config.GetIsNewRepo()
-		if !isNew {
-			time.After(60 * time.Second)
-		}
-		_, err := gui.fetch(g, g.CurrentView(), false)
-		if err != nil && strings.Contains(err.Error(), "exit status 128") && isNew {
-			_ = gui.createConfirmationPanel(g, g.CurrentView(), gui.Tr.SLocalize("NoAutomaticGitFetchTitle"), gui.Tr.SLocalize("NoAutomaticGitFetchBody"), nil, nil)
-		} else {
-			gui.goEvery(time.Second*60, func() error {
-				_, err := gui.fetch(gui.g, gui.g.CurrentView(), false)
-				return err
-			})
-		}
-	}()
+	if gui.Config.GetUserConfig().GetBool("git.autoFetch") {
+		go gui.startBackgroundFetch()
+	}
 	gui.goEvery(time.Second*10, gui.refreshFiles)
 	gui.goEvery(time.Millisecond*50, gui.renderAppStatus)
 
@@ -630,19 +687,38 @@ func (gui *Gui) RunWithSubprocesses() error {
 			} else if err == gui.Errors.ErrSwitchRepo {
 				continue
 			} else if err == gui.Errors.ErrSubProcess {
-				gui.SubProcess.Stdin = os.Stdin
-				gui.SubProcess.Stdout = os.Stdout
-				gui.SubProcess.Stderr = os.Stderr
-				gui.SubProcess.Run()
-				gui.SubProcess.Stdout = ioutil.Discard
-				gui.SubProcess.Stderr = ioutil.Discard
-				gui.SubProcess.Stdin = nil
-				gui.SubProcess = nil
+				if err := gui.runCommand(); err != nil {
+					return err
+				}
 			} else {
 				return err
 			}
 		}
 	}
+	return nil
+}
+
+func (gui *Gui) runCommand() error {
+	gui.SubProcess.Stdout = os.Stdout
+	gui.SubProcess.Stderr = os.Stdout
+	gui.SubProcess.Stdin = os.Stdin
+
+	fmt.Fprintf(os.Stdout, "\n%s\n\n", utils.ColoredString("+ "+strings.Join(gui.SubProcess.Args, " "), color.FgBlue))
+
+	if err := gui.SubProcess.Run(); err != nil {
+		// not handling the error explicitly because usually we're going to see it
+		// in the output anyway
+		gui.Log.Error(err)
+	}
+
+	gui.SubProcess.Stdout = ioutil.Discard
+	gui.SubProcess.Stderr = ioutil.Discard
+	gui.SubProcess.Stdin = nil
+	gui.SubProcess = nil
+
+	fmt.Fprintf(os.Stdout, "\n%s", utils.ColoredString(gui.Tr.SLocalize("pressEnterToReturn"), color.FgGreen))
+	fmt.Scanln() // wait for enter press
+
 	return nil
 }
 

@@ -2,7 +2,7 @@
 
 ## Default:
 
-```
+```yaml
   gui:
     # stuff relating to the UI
     scrollHeight: 2 # how many lines you scroll by
@@ -21,6 +21,8 @@
     merging:
       # only applicable to unix users
       manualCommit: false
+    skipHookPrefix: WIP
+    autoFetch: true
   update:
     method: prompt # can be: prompt | background | never
     days: 14 # how often an update is checked for
@@ -32,21 +34,21 @@
 
 ### Windows:
 
-```
+```yaml
   os:
     openCommand: 'cmd /c "start "" {{filename}}"'
 ```
 
 ### Linux:
 
-```
+```yaml
   os:
     openCommand: 'sh -c "xdg-open {{filename}} >/dev/null"'
 ```
 
 ### OSX:
 
-```
+```yaml
   os:
     openCommand: 'open {{filename}}'
 ```
@@ -55,7 +57,7 @@
 
 for users of VSCode
 
-```
+```yaml
   os:
     openCommand: 'code -r {{filename}}'
 ```

@@ -13,6 +13,7 @@ type Binding struct {
 	Key         interface{} // FIXME: find out how to get `gocui.Key | rune`
 	Modifier    gocui.Modifier
 	Description string
+	Alternative string
 }
 
 // GetDisplayStrings returns the display string of a file
@@ -28,6 +29,12 @@ func (b *Binding) GetKey() string {
 	case rune:
 		key = int(b.Key.(rune))
 	case gocui.Key:
+		if b.Key.(gocui.Key) == gocui.KeyCtrlJ {
+			return "ctrl+j"
+		}
+		if b.Key.(gocui.Key) == gocui.KeyCtrlK {
+			return "ctrl+k"
+		}
 		key = int(b.Key.(gocui.Key))
 	}
 
@@ -75,13 +82,25 @@ func (gui *Gui) GetInitialKeybindings() []*Binding {
 			Modifier: gocui.ModNone,
 			Handler:  gui.quit,
 		}, {
+			ViewName:    "",
+			Key:         gocui.KeyPgup,
+			Modifier:    gocui.ModNone,
+			Handler:     gui.scrollUpMain,
+			Alternative: "fn+up",
+		}, {
+			ViewName:    "",
+			Key:         gocui.KeyPgdn,
+			Modifier:    gocui.ModNone,
+			Handler:     gui.scrollDownMain,
+			Alternative: "fn+down",
+		}, {
 			ViewName: "",
-			Key:      gocui.KeyPgup,
+			Key:      'K',
 			Modifier: gocui.ModNone,
 			Handler:  gui.scrollUpMain,
 		}, {
 			ViewName: "",
-			Key:      gocui.KeyPgdn,
+			Key:      'J',
 			Modifier: gocui.ModNone,
 			Handler:  gui.scrollDownMain,
 		}, {
@@ -154,6 +173,13 @@ func (gui *Gui) GetInitialKeybindings() []*Binding {
 			Modifier:    gocui.ModNone,
 			Handler:     gui.handleCommitPress,
 			Description: gui.Tr.SLocalize("CommitChanges"),
+		},
+		{
+			ViewName:    "files",
+			Key:         'w',
+			Modifier:    gocui.ModNone,
+			Handler:     gui.handleWIPCommitPress,
+			Description: gui.Tr.SLocalize("commitChangesWithoutHook"),
 		}, {
 			ViewName:    "files",
 			Key:         'A',
@@ -204,10 +230,16 @@ func (gui *Gui) GetInitialKeybindings() []*Binding {
 			Description: gui.Tr.SLocalize("refreshFiles"),
 		}, {
 			ViewName:    "files",
+			Key:         's',
+			Modifier:    gocui.ModNone,
+			Handler:     gui.handleStashChanges,
+			Description: gui.Tr.SLocalize("stashAllChanges"),
+		}, {
+			ViewName:    "files",
 			Key:         'S',
 			Modifier:    gocui.ModNone,
-			Handler:     gui.handleStashSave,
-			Description: gui.Tr.SLocalize("stashFiles"),
+			Handler:     gui.handleCreateStashMenu,
+			Description: gui.Tr.SLocalize("viewStashOptions"),
 		}, {
 			ViewName:    "files",
 			Key:         'a',
@@ -238,6 +270,12 @@ func (gui *Gui) GetInitialKeybindings() []*Binding {
 			Modifier:    gocui.ModNone,
 			Handler:     gui.handleGitFetch,
 			Description: gui.Tr.SLocalize("fetch"),
+		}, {
+			ViewName:    "files",
+			Key:         'X',
+			Modifier:    gocui.ModNone,
+			Handler:     gui.handleCustomCommand,
+			Description: gui.Tr.SLocalize("executeCustomCommand"),
 		}, {
 			ViewName:    "branches",
 			Key:         gocui.KeySpace,
@@ -314,7 +352,7 @@ func (gui *Gui) GetInitialKeybindings() []*Binding {
 			ViewName:    "commits",
 			Key:         'g',
 			Modifier:    gocui.ModNone,
-			Handler:     gui.handleResetToCommit,
+			Handler:     gui.handleCreateCommitResetMenu,
 			Description: gui.Tr.SLocalize("resetToThisCommit"),
 		}, {
 			ViewName:    "commits",
@@ -324,19 +362,31 @@ func (gui *Gui) GetInitialKeybindings() []*Binding {
 			Description: gui.Tr.SLocalize("fixupCommit"),
 		}, {
 			ViewName:    "commits",
+			Key:         'F',
+			Modifier:    gocui.ModNone,
+			Handler:     gui.handleCreateFixupCommit,
+			Description: gui.Tr.SLocalize("createFixupCommit"),
+		}, {
+			ViewName:    "commits",
+			Key:         'S',
+			Modifier:    gocui.ModNone,
+			Handler:     gui.handleSquashAllAboveFixupCommits,
+			Description: gui.Tr.SLocalize("squashAboveCommits"),
+		}, {
+			ViewName:    "commits",
 			Key:         'd',
 			Modifier:    gocui.ModNone,
 			Handler:     gui.handleCommitDelete,
 			Description: gui.Tr.SLocalize("deleteCommit"),
 		}, {
 			ViewName:    "commits",
-			Key:         'J',
+			Key:         gocui.KeyCtrlJ,
 			Modifier:    gocui.ModNone,
 			Handler:     gui.handleCommitMoveDown,
 			Description: gui.Tr.SLocalize("moveDownCommit"),
 		}, {
 			ViewName:    "commits",
-			Key:         'K',
+			Key:         gocui.KeyCtrlK,
 			Modifier:    gocui.ModNone,
 			Handler:     gui.handleCommitMoveUp,
 			Description: gui.Tr.SLocalize("moveUpCommit"),
@@ -388,6 +438,12 @@ func (gui *Gui) GetInitialKeybindings() []*Binding {
 			Modifier:    gocui.ModNone,
 			Handler:     gui.handleSwitchToCommitFilesPanel,
 			Description: gui.Tr.SLocalize("viewCommitFiles"),
+		}, {
+			ViewName:    "commits",
+			Key:         gocui.KeySpace,
+			Modifier:    gocui.ModNone,
+			Handler:     gui.handleToggleDiffCommit,
+			Description: gui.Tr.SLocalize("CommitsDiff"),
 		}, {
 			ViewName:    "stash",
 			Key:         gocui.KeySpace,
@@ -542,12 +598,14 @@ func (gui *Gui) GetContextMap() map[string]map[string][]*Binding {
 					Modifier:    gocui.ModNone,
 					Handler:     gui.scrollDownMain,
 					Description: gui.Tr.SLocalize("ScrollDown"),
+					Alternative: "fn+up",
 				}, {
 					ViewName:    "main",
 					Key:         gocui.MouseWheelUp,
 					Modifier:    gocui.ModNone,
 					Handler:     gui.scrollUpMain,
 					Description: gui.Tr.SLocalize("ScrollUp"),
+					Alternative: "fn+down",
 				},
 			},
 			"staging": {

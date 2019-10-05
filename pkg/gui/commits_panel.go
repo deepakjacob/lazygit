@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/fatih/color"
 	"github.com/go-errors/errors"
 
 	"github.com/jesseduffield/gocui"
@@ -39,6 +40,12 @@ func (gui *Gui) handleCommitSelect(g *gocui.Gui, v *gocui.View) error {
 	if err := gui.focusPoint(0, gui.State.Panels.Commits.SelectedLine, len(gui.State.Commits), v); err != nil {
 		return err
 	}
+
+	// if specific diff mode is on, don't show diff
+	if gui.State.Panels.Commits.SpecificDiffMode {
+		return nil
+	}
+
 	commitText, err := gui.GitCommand.Show(commit.Sha)
 	if err != nil {
 		return err
@@ -48,7 +55,7 @@ func (gui *Gui) handleCommitSelect(g *gocui.Gui, v *gocui.View) error {
 
 func (gui *Gui) refreshCommits(g *gocui.Gui) error {
 	g.Update(func(*gocui.Gui) error {
-		builder, err := git.NewCommitListBuilder(gui.Log, gui.GitCommand, gui.OSCommand, gui.Tr, gui.State.CherryPickedCommits)
+		builder, err := git.NewCommitListBuilder(gui.Log, gui.GitCommand, gui.OSCommand, gui.Tr, gui.State.CherryPickedCommits, gui.State.DiffEntries)
 		if err != nil {
 			return err
 		}
@@ -118,7 +125,8 @@ func (gui *Gui) handleResetToCommit(g *gocui.Gui, commitView *gocui.View) error 
 		if commit == nil {
 			panic(errors.New(gui.Tr.SLocalize("NoCommitsThisBranch")))
 		}
-		if err := gui.GitCommand.ResetToCommit(commit.Sha); err != nil {
+
+		if err := gui.GitCommand.ResetToCommit(commit.Sha, "mixed"); err != nil {
 			return gui.createErrorPanel(g, err.Error())
 		}
 		if err := gui.refreshCommits(g); err != nil {
@@ -447,4 +455,151 @@ func (gui *Gui) handleSwitchToCommitFilesPanel(g *gocui.Gui, v *gocui.View) erro
 	}
 
 	return gui.switchFocus(g, v, gui.getCommitFilesView())
+}
+
+func (gui *Gui) handleToggleDiffCommit(g *gocui.Gui, v *gocui.View) error {
+	selectLimit := 2
+
+	// get selected commit
+	commit := gui.getSelectedCommit(g)
+	if commit == nil {
+		return gui.renderString(g, "main", gui.Tr.SLocalize("NoCommitsThisBranch"))
+	}
+
+	// if already selected commit delete
+	if idx, has := gui.hasCommit(gui.State.DiffEntries, commit.Sha); has {
+		gui.State.DiffEntries = gui.unchooseCommit(gui.State.DiffEntries, idx)
+	} else {
+		if len(gui.State.DiffEntries) == selectLimit {
+			gui.State.DiffEntries = gui.unchooseCommit(gui.State.DiffEntries, 0)
+		}
+		gui.State.DiffEntries = append(gui.State.DiffEntries, commit)
+	}
+
+	gui.setDiffMode()
+
+	// if selected two commits, display diff between
+	if len(gui.State.DiffEntries) == selectLimit {
+		commitText, err := gui.GitCommand.DiffCommits(gui.State.DiffEntries[0].Sha, gui.State.DiffEntries[1].Sha)
+
+		if err != nil {
+			return gui.createErrorPanel(gui.g, err.Error())
+		}
+
+		return gui.renderString(g, "main", commitText)
+	}
+
+	return nil
+}
+
+func (gui *Gui) setDiffMode() {
+	v := gui.getCommitsView()
+	if len(gui.State.DiffEntries) != 0 {
+		gui.State.Panels.Commits.SpecificDiffMode = true
+		v.Title = gui.Tr.SLocalize("CommitsDiffTitle")
+	} else {
+		gui.State.Panels.Commits.SpecificDiffMode = false
+		v.Title = gui.Tr.SLocalize("CommitsTitle")
+	}
+
+	gui.refreshCommits(gui.g)
+}
+
+func (gui *Gui) hasCommit(commits []*commands.Commit, target string) (int, bool) {
+	for idx, commit := range commits {
+		if commit.Sha == target {
+			return idx, true
+		}
+	}
+	return -1, false
+}
+
+func (gui *Gui) unchooseCommit(commits []*commands.Commit, i int) []*commands.Commit {
+	return append(commits[:i], commits[i+1:]...)
+}
+
+func (gui *Gui) handleCreateFixupCommit(g *gocui.Gui, v *gocui.View) error {
+	commit := gui.getSelectedCommit(g)
+	if commit == nil {
+		return nil
+	}
+
+	return gui.createConfirmationPanel(g, v, gui.Tr.SLocalize("CreateFixupCommit"), gui.Tr.TemplateLocalize(
+		"SureCreateFixupCommit",
+		Teml{
+			"commit": commit.Sha,
+		},
+	), func(g *gocui.Gui, v *gocui.View) error {
+		if err := gui.GitCommand.CreateFixupCommit(commit.Sha); err != nil {
+			return gui.createErrorPanel(g, err.Error())
+		}
+
+		return gui.refreshSidePanels(gui.g)
+	}, nil)
+}
+
+func (gui *Gui) handleSquashAllAboveFixupCommits(g *gocui.Gui, v *gocui.View) error {
+	commit := gui.getSelectedCommit(g)
+	if commit == nil {
+		return nil
+	}
+
+	return gui.createConfirmationPanel(g, v, gui.Tr.SLocalize("SquashAboveCommits"), gui.Tr.TemplateLocalize(
+		"SureSquashAboveCommits",
+		Teml{
+			"commit": commit.Sha,
+		},
+	), func(g *gocui.Gui, v *gocui.View) error {
+		return gui.WithWaitingStatus(gui.Tr.SLocalize("SquashingStatus"), func() error {
+			err := gui.GitCommand.SquashAllAboveFixupCommits(commit.Sha)
+			return gui.handleGenericMergeCommandResult(err)
+		})
+	}, nil)
+}
+
+type resetOption struct {
+	description string
+	command     string
+}
+
+// GetDisplayStrings is a function.
+func (r *resetOption) GetDisplayStrings(isFocused bool) []string {
+	return []string{r.description, color.New(color.FgRed).Sprint(r.command)}
+}
+
+func (gui *Gui) handleCreateCommitResetMenu(g *gocui.Gui, v *gocui.View) error {
+	commit := gui.getSelectedCommit(g)
+	if commit == nil {
+		return gui.createErrorPanel(gui.g, gui.Tr.SLocalize("NoCommitsThisBranch"))
+	}
+
+	strengths := []string{"soft", "mixed", "hard"}
+	options := make([]*resetOption, len(strengths))
+	for i, strength := range strengths {
+		options[i] = &resetOption{
+			description: fmt.Sprintf("%s reset", strength),
+			command:     fmt.Sprintf("reset --%s %s", strength, commit.Sha),
+		}
+	}
+
+	handleMenuPress := func(index int) error {
+		if err := gui.GitCommand.ResetToCommit(commit.Sha, strengths[index]); err != nil {
+			return err
+		}
+
+		if err := gui.refreshCommits(g); err != nil {
+			return err
+		}
+		if err := gui.refreshFiles(); err != nil {
+			return err
+		}
+		if err := gui.resetOrigin(gui.getCommitsView()); err != nil {
+			return err
+		}
+
+		gui.State.Panels.Commits.SelectedLine = 0
+		return gui.handleCommitSelect(g, gui.getCommitsView())
+	}
+
+	return gui.createMenu(fmt.Sprintf("%s %s", gui.Tr.SLocalize("resetTo"), commit.Sha), options, len(options), handleMenuPress)
 }

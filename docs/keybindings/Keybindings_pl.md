@@ -22,21 +22,22 @@
 
 <pre>
   <kbd>c</kbd>: commituj zmiany
+  <kbd>w</kbd>: commit changes without pre-commit hook
   <kbd>A</kbd>: zmień ostatnie zatwierdzenie
   <kbd>C</kbd>: commituj zmiany używając edytora z gita
   <kbd>space</kbd>: przełącz zatwierdzenie
-  <kbd>d</kbd>: usuń jeśli nie śledzony / przełącz jeśli śledzony
+  <kbd>d</kbd>: view 'discard changes' options
   <kbd>e</kbd>: edytuj plik
   <kbd>o</kbd>: otwórz plik
   <kbd>i</kbd>: dodaj do .gitignore
   <kbd>r</kbd>: odśwież pliki
   <kbd>S</kbd>: przechowaj pliki
-  <kbd>s</kbd>: soft reset to last commit
   <kbd>a</kbd>: przełącz wszystkie zatwierdzenia
   <kbd>t</kbd>: dodaj łatkę
-  <kbd>D</kbd>: zresetuj twardo i usuń niepotwierdzone pliki
+  <kbd>D</kbd>: view reset options
   <kbd>enter</kbd>: zatwierdź pojedyncze linie
   <kbd>f</kbd>: fetch
+  <kbd>X</kbd>: execute custom command
 </pre>
 
 ## Gałęzie
@@ -61,9 +62,11 @@
   <kbd>R</kbd>: przemianuj commit w edytorze
   <kbd>g</kbd>: zresetuj do tego commita
   <kbd>f</kbd>: napraw commit
+  <kbd>F</kbd>: create fixup commit for this commit
+  <kbd>S</kbd>: squash above commits
   <kbd>d</kbd>: delete commit
-  <kbd>J</kbd>: move commit down one
-  <kbd>K</kbd>: move commit up one
+  <kbd>ctrl+j</kbd>: move commit down one
+  <kbd>ctrl+k</kbd>: move commit up one
   <kbd>e</kbd>: edit commit
   <kbd>A</kbd>: amend commit with staged changes
   <kbd>p</kbd>: pick commit (when mid-rebase)
@@ -72,6 +75,7 @@
   <kbd>C</kbd>: copy commit range (cherry-pick)
   <kbd>v</kbd>: paste commits (cherry-pick)
   <kbd>enter</kbd>: view commit's files
+  <kbd>space</kbd>: select commit to diff with another commit
 </pre>
 
 ## Schowek
@@ -94,8 +98,8 @@
 ## Main (Normal)
 
 <pre>
-  <kbd>PgDn</kbd>: scroll down
-  <kbd>PgUp</kbd>: scroll up
+  <kbd>PgDn</kbd>: scroll down (fn+up)
+  <kbd>PgUp</kbd>: scroll up (fn+down)
 </pre>
 
 ## Main (Zatwierdzanie)

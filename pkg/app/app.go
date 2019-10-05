@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/heroku/rollrus"
 	"github.com/jesseduffield/lazygit/pkg/commands"
 	"github.com/jesseduffield/lazygit/pkg/config"
 	"github.com/jesseduffield/lazygit/pkg/gui"
 	"github.com/jesseduffield/lazygit/pkg/i18n"
 	"github.com/jesseduffield/lazygit/pkg/updates"
+	"github.com/jesseduffield/rollrus"
 	"github.com/shibukawa/configdir"
 	"github.com/sirupsen/logrus"
 )
@@ -31,6 +31,11 @@ type App struct {
 	Tr            *i18n.Localizer
 	Updater       *updates.Updater // may only need this on the Gui
 	ClientContext string
+}
+
+type errorMapping struct {
+	originalError string
+	newError      string
 }
 
 func newProductionLogger(config config.AppConfigurer) *logrus.Logger {
@@ -158,7 +163,8 @@ func (app *App) Run() error {
 		os.Exit(0)
 	}
 
-	return app.Gui.RunWithSubprocesses()
+	err := app.Gui.RunWithSubprocesses()
+	return err
 }
 
 // Rebase contains logic for when we've been run in demon mode, meaning we've
@@ -191,4 +197,23 @@ func (app *App) Close() error {
 		}
 	}
 	return nil
+}
+
+// KnownError takes an error and tells us whether it's an error that we know about where we can print a nicely formatted version of it rather than panicking with a stack trace
+func (app *App) KnownError(err error) (string, bool) {
+	errorMessage := err.Error()
+
+	mappings := []errorMapping{
+		{
+			originalError: "fatal: not a git repository (or any of the parent directories): .git",
+			newError:      app.Tr.SLocalize("notARepository"),
+		},
+	}
+
+	for _, mapping := range mappings {
+		if strings.Contains(errorMessage, mapping.originalError) {
+			return mapping.newError, true
+		}
+	}
+	return "", false
 }

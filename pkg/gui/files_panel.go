@@ -86,6 +86,10 @@ func (gui *Gui) refreshFiles() error {
 	selectedFile, _ := gui.getSelectedFile(gui.g)
 
 	filesView := gui.getFilesView()
+	if filesView == nil {
+		// if the filesView hasn't been instantiated yet we just return
+		return nil
+	}
 	if err := gui.refreshStateFiles(); err != nil {
 		return err
 	}
@@ -272,6 +276,22 @@ func (gui *Gui) handleIgnoreFile(g *gocui.Gui, v *gocui.View) error {
 		return gui.createErrorPanel(g, err.Error())
 	}
 	return gui.refreshFiles()
+}
+
+func (gui *Gui) handleWIPCommitPress(g *gocui.Gui, filesView *gocui.View) error {
+	skipHookPreifx := gui.Config.GetUserConfig().GetString("git.skipHookPrefix")
+	if skipHookPreifx == "" {
+		return gui.createErrorPanel(gui.g, gui.Tr.SLocalize("SkipHookPrefixNotConfigured"))
+	}
+
+	if err := gui.renderString(g, "commitMessage", skipHookPreifx); err != nil {
+		return err
+	}
+	if err := gui.getCommitMessageView().SetCursor(len(skipHookPreifx), 0); err != nil {
+		return err
+	}
+
+	return gui.handleCommitPress(g, filesView)
 }
 
 func (gui *Gui) handleCommitPress(g *gocui.Gui, filesView *gocui.View) error {
@@ -598,4 +618,55 @@ func (gui *Gui) handleCreateResetMenu(g *gocui.Gui, v *gocui.View) error {
 	}
 
 	return gui.createMenu("", options, len(options), handleMenuPress)
+}
+
+func (gui *Gui) handleCustomCommand(g *gocui.Gui, v *gocui.View) error {
+	return gui.createPromptPanel(g, v, gui.Tr.SLocalize("CustomCommand"), func(g *gocui.Gui, v *gocui.View) error {
+		command := gui.trimmedContent(v)
+		gui.SubProcess = gui.OSCommand.RunCustomCommand(command)
+		return gui.Errors.ErrSubProcess
+	})
+}
+
+type stashOption struct {
+	description string
+	handler     func() error
+}
+
+// GetDisplayStrings is a function.
+func (o *stashOption) GetDisplayStrings(isFocused bool) []string {
+	return []string{o.description}
+}
+
+func (gui *Gui) handleCreateStashMenu(g *gocui.Gui, v *gocui.View) error {
+	options := []*stashOption{
+		{
+			description: gui.Tr.SLocalize("stashAllChanges"),
+			handler: func() error {
+				return gui.handleStashSave(gui.GitCommand.StashSave)
+			},
+		},
+		{
+			description: gui.Tr.SLocalize("stashStagedChanges"),
+			handler: func() error {
+				return gui.handleStashSave(gui.GitCommand.StashSaveStagedChanges)
+			},
+		},
+		{
+			description: gui.Tr.SLocalize("cancel"),
+			handler: func() error {
+				return nil
+			},
+		},
+	}
+
+	handleMenuPress := func(index int) error {
+		return options[index].handler()
+	}
+
+	return gui.createMenu(gui.Tr.SLocalize("stashOptions"), options, len(options), handleMenuPress)
+}
+
+func (gui *Gui) handleStashChanges(g *gocui.Gui, v *gocui.View) error {
+	return gui.handleStashSave(gui.GitCommand.StashSave)
 }

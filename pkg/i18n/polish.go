@@ -27,6 +27,12 @@ func addPolish(i18nObject *i18n.Bundle) error {
 			ID:    "CommitsTitle",
 			Other: "Commity",
 		}, &i18n.Message{
+			ID:    "CommitsDiffTitle",
+			Other: "Commits (specific diff mode)",
+		}, &i18n.Message{
+			ID:    "CommitsDiff",
+			Other: "select commit to diff with another commit",
+		}, &i18n.Message{
 			ID:    "StashTitle",
 			Other: "Schowek",
 		}, &i18n.Message{
@@ -77,9 +83,6 @@ func addPolish(i18nObject *i18n.Bundle) error {
 		}, &i18n.Message{
 			ID:    "execute",
 			Other: "wykonaj",
-		}, &i18n.Message{
-			ID:    "stashFiles",
-			Other: "przechowaj pliki",
 		}, &i18n.Message{
 			ID:    "open",
 			Other: "otwórz",
@@ -484,7 +487,7 @@ func addPolish(i18nObject *i18n.Bundle) error {
 			Other: "amend commit with staged changes",
 		}, &i18n.Message{
 			ID:    "FoundConflicts",
-			Other: "Damn, conflicts! To abort press 'esc', otherwise press 'enter'",
+			Other: "Conflicts! To abort press 'esc', otherwise press 'enter'",
 		}, &i18n.Message{
 			ID:    "FoundConflictsTitle",
 			Other: "Auto-merge failed",
@@ -542,6 +545,9 @@ func addPolish(i18nObject *i18n.Bundle) error {
 		}, &i18n.Message{
 			ID:    "CannotRebaseOntoFirstCommit",
 			Other: "You cannot interactive rebase onto the first commit",
+		}, &i18n.Message{
+			ID:    "CannotSquashOntoSecondCommit",
+			Other: "You cannot squash/fixup onto the second commit",
 		}, &i18n.Message{
 			ID:    "Donate",
 			Other: "Donate",
@@ -677,6 +683,57 @@ func addPolish(i18nObject *i18n.Bundle) error {
 		}, &i18n.Message{
 			ID:    "viewResetOptions",
 			Other: `view reset options`,
+		}, &i18n.Message{
+			ID:    "createFixupCommit",
+			Other: `create fixup commit for this commit`,
+		}, &i18n.Message{
+			ID:    "squashAboveCommits",
+			Other: `squash above commits`,
+		}, &i18n.Message{
+			ID:    "SquashAboveCommits",
+			Other: `Squash above commits`,
+		}, &i18n.Message{
+			ID:    "SureSquashAboveCommits",
+			Other: `Are you sure you want to squash all fixup! commits above {{.commit}}?`,
+		}, &i18n.Message{
+			ID:    "CreateFixupCommit",
+			Other: `Create fixup commit`,
+		}, &i18n.Message{
+			ID:    "SureCreateFixupCommit",
+			Other: `Are you sure you want to create a fixup! commit for commit {{.commit}}?`,
+		}, &i18n.Message{
+			ID:    "executeCustomCommand",
+			Other: "execute custom command",
+		}, &i18n.Message{
+			ID:    "CustomCommand",
+			Other: "Custom Command:",
+		}, &i18n.Message{
+			ID:    "commitChangesWithoutHook",
+			Other: "commit changes without pre-commit hook",
+		}, &i18n.Message{
+			ID:    "SkipHookPrefixNotConfigured",
+			Other: "You have not configured a commit message prefix for skipping hooks. Set `git.skipHookPrefix = 'WIP'` in your config",
+		}, &i18n.Message{
+			ID:    "resetTo",
+			Other: `reset to`,
+		}, &i18n.Message{
+			ID:    "pressEnterToReturn",
+			Other: "Press enter to return to lazygit",
+		}, &i18n.Message{
+			ID:    "viewStashOptions",
+			Other: "view stash options",
+		}, &i18n.Message{
+			ID:    "stashAllChanges",
+			Other: "przechowaj pliki",
+		}, &i18n.Message{
+			ID:    "stashStagedChanges",
+			Other: "stash staged changes",
+		}, &i18n.Message{
+			ID:    "stashOptions",
+			Other: "Stash options",
+		}, &i18n.Message{
+			ID:    "notARepository",
+			Other: "Error: must be run inside a git repository",
 		},
 	)
 }

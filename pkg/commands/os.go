@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/go-errors/errors"
 
@@ -77,8 +78,9 @@ func (c *OSCommand) RunExecutable(cmd *exec.Cmd) error {
 // ExecutableFromString takes a string like `git status` and returns an executable command for it
 func (c *OSCommand) ExecutableFromString(commandStr string) *exec.Cmd {
 	splitCmd := str.ToArgv(commandStr)
-	c.Log.Info(splitCmd)
-	return c.command(splitCmd[0], splitCmd[1:]...)
+	cmd := c.command(splitCmd[0], splitCmd[1:]...)
+	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	return cmd
 }
 
 // RunCommandWithOutputLive runs RunCommandWithOutputLiveWrapper
@@ -200,8 +202,13 @@ func (c *OSCommand) EditFile(filename string) (*exec.Cmd, error) {
 }
 
 // PrepareSubProcess iniPrepareSubProcessrocess then tells the Gui to switch to it
+// TODO: see if this needs to exist, given that ExecutableFromString does the same things
 func (c *OSCommand) PrepareSubProcess(cmdName string, commandArgs ...string) *exec.Cmd {
-	return c.command(cmdName, commandArgs...)
+	cmd := c.command(cmdName, commandArgs...)
+	if cmd != nil {
+		cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	}
+	return cmd
 }
 
 // Quote wraps a message in platform-specific quotation marks
@@ -295,4 +302,69 @@ func (c *OSCommand) GetLazygitPath() string {
 		ex = os.Args[0] // fallback to the first call argument if needed
 	}
 	return filepath.ToSlash(ex)
+}
+
+// RunCustomCommand returns the pointer to a custom command
+func (c *OSCommand) RunCustomCommand(command string) *exec.Cmd {
+	return c.PrepareSubProcess(c.Platform.shell, c.Platform.shellArg, command)
+}
+
+// PipeCommands runs a heap of commands and pipes their inputs/outputs together like A | B | C
+func (c *OSCommand) PipeCommands(commandStrings ...string) error {
+
+	cmds := make([]*exec.Cmd, len(commandStrings))
+
+	for i, str := range commandStrings {
+		cmds[i] = c.ExecutableFromString(str)
+	}
+
+	for i := 0; i < len(cmds)-1; i++ {
+		stdout, err := cmds[i].StdoutPipe()
+		if err != nil {
+			return err
+		}
+
+		cmds[i+1].Stdin = stdout
+	}
+
+	// keeping this here in case I adapt this code for some other purpose in the future
+	// cmds[len(cmds)-1].Stdout = os.Stdout
+
+	finalErrors := []string{}
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(cmds))
+
+	for _, cmd := range cmds {
+		currentCmd := cmd
+		go func() {
+			stderr, err := currentCmd.StderrPipe()
+			if err != nil {
+				c.Log.Error(err)
+			}
+
+			if err := currentCmd.Start(); err != nil {
+				c.Log.Error(err)
+			}
+
+			if b, err := ioutil.ReadAll(stderr); err == nil {
+				if len(b) > 0 {
+					finalErrors = append(finalErrors, string(b))
+				}
+			}
+
+			if err := currentCmd.Wait(); err != nil {
+				c.Log.Error(err)
+			}
+
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	if len(finalErrors) > 0 {
+		return errors.New(strings.Join(finalErrors, "\n"))
+	}
+	return nil
 }

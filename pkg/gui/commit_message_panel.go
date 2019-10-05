@@ -30,7 +30,12 @@ func (gui *Gui) handleCommitConfirm(g *gocui.Gui, v *gocui.View) error {
 	if message == "" {
 		return gui.createErrorPanel(g, gui.Tr.SLocalize("CommitWithoutMessageErr"))
 	}
-	ok, err := gui.runSyncOrAsyncCommand(gui.GitCommand.Commit(message))
+	flags := ""
+	skipHookPrefix := gui.Config.GetUserConfig().GetString("git.skipHookPrefix")
+	if skipHookPrefix != "" && strings.HasPrefix(message, skipHookPrefix) {
+		flags = "--no-verify"
+	}
+	ok, err := gui.runSyncOrAsyncCommand(gui.GitCommand.Commit(message, flags))
 	if err != nil {
 		return err
 	}
@@ -64,33 +69,6 @@ func (gui *Gui) handleCommitFocused(g *gocui.Gui, v *gocui.View) error {
 		},
 	)
 	return gui.renderString(g, "options", message)
-}
-
-func (gui *Gui) simpleEditor(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
-	switch {
-	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
-		v.EditDelete(true)
-	case key == gocui.KeyDelete:
-		v.EditDelete(false)
-	case key == gocui.KeyArrowDown:
-		v.MoveCursor(0, 1, false)
-	case key == gocui.KeyArrowUp:
-		v.MoveCursor(0, -1, false)
-	case key == gocui.KeyArrowLeft:
-		v.MoveCursor(-1, 0, false)
-	case key == gocui.KeyArrowRight:
-		v.MoveCursor(1, 0, false)
-	case key == gocui.KeyTab:
-		v.EditNewLine()
-	case key == gocui.KeySpace:
-		v.EditWrite(' ')
-	case key == gocui.KeyInsert:
-		v.Overwrite = !v.Overwrite
-	default:
-		v.EditWrite(ch)
-	}
-
-	gui.RenderCommitLength()
 }
 
 func (gui *Gui) getBufferLength(view *gocui.View) string {

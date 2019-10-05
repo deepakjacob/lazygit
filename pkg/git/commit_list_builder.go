@@ -31,16 +31,18 @@ type CommitListBuilder struct {
 	OSCommand           *commands.OSCommand
 	Tr                  *i18n.Localizer
 	CherryPickedCommits []*commands.Commit
+	DiffEntries         []*commands.Commit
 }
 
 // NewCommitListBuilder builds a new commit list builder
-func NewCommitListBuilder(log *logrus.Entry, gitCommand *commands.GitCommand, osCommand *commands.OSCommand, tr *i18n.Localizer, cherryPickedCommits []*commands.Commit) (*CommitListBuilder, error) {
+func NewCommitListBuilder(log *logrus.Entry, gitCommand *commands.GitCommand, osCommand *commands.OSCommand, tr *i18n.Localizer, cherryPickedCommits []*commands.Commit, diffEntries []*commands.Commit) (*CommitListBuilder, error) {
 	return &CommitListBuilder{
 		Log:                 log,
 		GitCommand:          gitCommand,
 		OSCommand:           osCommand,
 		Tr:                  tr,
 		CherryPickedCommits: cherryPickedCommits,
+		DiffEntries:         diffEntries,
 	}, nil
 }
 
@@ -96,6 +98,14 @@ func (c *CommitListBuilder) GetCommits() ([]*commands.Commit, error) {
 		return nil, err
 	}
 
+	for _, commit := range commits {
+		for _, entry := range c.DiffEntries {
+			if entry.Sha == commit.Sha {
+				commit.Status = "selected"
+			}
+		}
+	}
+
 	return commits, nil
 }
 
@@ -113,7 +123,7 @@ func (c *CommitListBuilder) getRebasingCommits(rebaseMode string) ([]*commands.C
 
 func (c *CommitListBuilder) getNormalRebasingCommits() ([]*commands.Commit, error) {
 	rewrittenCount := 0
-	bytesContent, err := ioutil.ReadFile(".git/rebase-apply/rewritten")
+	bytesContent, err := ioutil.ReadFile(fmt.Sprintf("%s/rebase-apply/rewritten", c.GitCommand.DotGitDir))
 	if err == nil {
 		content := string(bytesContent)
 		rewrittenCount = len(strings.Split(content, "\n"))
@@ -121,7 +131,7 @@ func (c *CommitListBuilder) getNormalRebasingCommits() ([]*commands.Commit, erro
 
 	// we know we're rebasing, so lets get all the files whose names have numbers
 	commits := []*commands.Commit{}
-	err = filepath.Walk(".git/rebase-apply", func(path string, f os.FileInfo, err error) error {
+	err = filepath.Walk(fmt.Sprintf("%s/rebase-apply", c.GitCommand.DotGitDir), func(path string, f os.FileInfo, err error) error {
 		if rewrittenCount > 0 {
 			rewrittenCount--
 			return nil
@@ -165,9 +175,9 @@ func (c *CommitListBuilder) getNormalRebasingCommits() ([]*commands.Commit, erro
 // and extracts out the sha and names of commits that we still have to go
 // in the rebase:
 func (c *CommitListBuilder) getInteractiveRebasingCommits() ([]*commands.Commit, error) {
-	bytesContent, err := ioutil.ReadFile(".git/rebase-merge/git-rebase-todo")
+	bytesContent, err := ioutil.ReadFile(fmt.Sprintf("%s/rebase-merge/git-rebase-todo", c.GitCommand.DotGitDir))
 	if err != nil {
-		c.Log.Info(fmt.Sprintf("error occured reading git-rebase-todo: %s", err.Error()))
+		c.Log.Info(fmt.Sprintf("error occurred reading git-rebase-todo: %s", err.Error()))
 		// we assume an error means the file doesn't exist so we just return
 		return nil, nil
 	}
@@ -251,10 +261,8 @@ func (c *CommitListBuilder) getMergeBase() (string, error) {
 		baseBranch = "develop"
 	}
 
-	output, err := c.OSCommand.RunCommandWithOutput(fmt.Sprintf("git merge-base HEAD %s", baseBranch))
-	if err != nil {
-		// swallowing error because it's not a big deal; probably because there are no commits yet
-	}
+	// swallowing error because it's not a big deal; probably because there are no commits yet
+	output, _ := c.OSCommand.RunCommandWithOutput(fmt.Sprintf("git merge-base HEAD %s", baseBranch))
 	return output, nil
 }
 
